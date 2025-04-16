@@ -1,13 +1,15 @@
 import sqlite3
 from datetime import datetime
 from telegram import Bot, Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackContext
-from apscheduler.schedulers.background import BackgroundScheduler
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes
+from telegram.ext import filters
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import os
+import asyncio
 
 # Конфигурация
-TOKEN = os.getenv("7838739285:AAEwKnujiqAMHLczxneITP4Tq_zZLnjHkBA")  # Токен из переменных окружения
-ADMIN_ID = int(os.getenv("ADMIN_ID", "385919505"))  # "ADMIN_ID" - имя переменной, 385919505 - значение по умолчанию
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # Токен из переменных окружения
+ADMIN_ID = int(os.getenv("ADMIN_ID", "385919505"))  # ID админа с значением по умолчанию
 DB_NAME = "birthdays.db"
 
 # Инициализация базы данных
@@ -66,8 +68,8 @@ def get_today_birthdays():
     return result
 
 # Команда /start
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
         "🎂 Бот для уведомлений о днях рождения!\n"
         "Доступные команды:\n"
         "/list — Показать все дни рождения\n"
@@ -76,24 +78,24 @@ def start(update: Update, context: CallbackContext):
     )
 
 # Команда /add (только для админа)
-def add_birthday_command(update: Update, context: CallbackContext):
+async def add_birthday_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update):
-        update.message.reply_text("❌ Только администратор может добавлять дни рождения!")
+        await update.message.reply_text("❌ Только администратор может добавлять дни рождения!")
         return
     
     try:
         _, name, day, month, year = update.message.text.split()
         day, month, year = int(day), int(month), int(year)
         add_birthday(update.message.chat_id, name, day, month, year)
-        update.message.reply_text(f"✅ Добавлено: {name} — {day}.{month}.{year}")
+        await update.message.reply_text(f"✅ Добавлено: {name} — {day}.{month}.{year}")
     except Exception as e:
-        update.message.reply_text("❌ Ошибка. Формат: /add Имя День Месяц Год")
+        await update.message.reply_text("❌ Ошибка. Формат: /add Имя День Месяц Год")
 
 # Команда /list
-def list_birthdays(update: Update, context: CallbackContext):
+async def list_birthdays(update: Update, context: ContextTypes.DEFAULT_TYPE):
     birthdays = get_all_birthdays(update.message.chat_id)
     if not birthdays:
-        update.message.reply_text("📌 Список дней рождения пуст.")
+        await update.message.reply_text("📌 Список дней рождения пуст.")
         return
     
     today = datetime.now()
@@ -102,32 +104,35 @@ def list_birthdays(update: Update, context: CallbackContext):
         age = today.year - year if year else "?"
         response += f"• {name} — {day}.{month} ({age} лет)\n"
     
-    update.message.reply_text(response)
+    await update.message.reply_text(response)
 
 # Ежедневная проверка дней рождений
-def check_birthdays(context: CallbackContext):
+async def check_birthdays(context: ContextTypes.DEFAULT_TYPE):
     birthdays = get_today_birthdays()
     for chat_id, name, age in birthdays:
         message = f"🎉 Сегодня день рождения у {name}!"
         if age:
             message += f" Исполняется {age} лет!"
-        context.bot.send_message(chat_id, message)
+        await context.bot.send_message(chat_id, message)
 
-def main():
+async def main():
     init_db()
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    
+    # Создаем приложение
+    application = Application.builder().token(TOKEN).build()
+    
+    # Добавляем обработчики команд
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("add", add_birthday_command))
+    application.add_handler(CommandHandler("list", list_birthdays))
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("add", add_birthday_command))
-    dp.add_handler(CommandHandler("list", list_birthdays))
-
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(check_birthdays, 'cron', hour=9, minute=0, args=[updater.job_queue])
+    # Настраиваем планировщик
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(check_birthdays, 'cron', hour=9, minute=0, args=[application.job_queue])
     scheduler.start()
 
-    updater.start_polling()
-    updater.idle()
+    # Запускаем бота
+    await application.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
