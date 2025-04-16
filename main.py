@@ -7,7 +7,7 @@ import os
 
 # Конфигурация
 TOKEN = os.getenv("7838739285:AAEwKnujiqAMHLczxneITP4Tq_zZLnjHkBA")  # Токен из переменных окружения
-ADMIN_ID = int(os.getenv("385919505"))    # ID админа из переменных окружения
+ADMIN_ID = int(os.getenv("ADMIN_ID", "385919505"))  # "ADMIN_ID" - имя переменной, 385919505 - значение по умолчанию
 DB_NAME = "birthdays.db"
 
 # Инициализация базы данных
